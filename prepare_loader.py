@@ -63,8 +63,8 @@ def get_loader():
 
     src_data = CelebADataset(data=src_data, transform=transform)
     tgt_data = CelebADataset(data=tgt_data, transform=transform)
-    src_loader = DataLoader(src_data, batch_size=50, shuffle=True, drop_last=True, num_workers=2, pin_memory=True)
-    tgt_loader = DataLoader(tgt_data, batch_size=50, shuffle=True, drop_last=True, num_workers=2, pin_memory=True)
+    src_loader = DataLoader(src_data, batch_size=300, shuffle=True, drop_last=True, num_workers=2, pin_memory=True)
+    tgt_loader = DataLoader(tgt_data, batch_size=300, shuffle=True, drop_last=True, num_workers=2, pin_memory=True)
 
     # for batch_idx, batch in enumerate(src_loader):
     #     print(batch_idx, batch[0].shape)

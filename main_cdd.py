@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from model import CDDNet
 from prepare_loader import get_loader
-from utils import measures_from_Yhat, combined_lable
+from utils import measures_from_Yhat, combined_label
 from CustomLoss import DDP_Loss, CDDLinear
 from itertools import cycle
 
@@ -35,7 +35,7 @@ CDD_Loss = CDDLinear(n_feat=256, n_cls=4, K=1)
 
 sensitive_attrs = torch.LongTensor([0, 1]).to(device)
 
-def train(e):
+def train(e, da, fa):
     cls_loss_avg = 0
     intra_cdd_avg = 0
     inter_cdd_avg = 0
@@ -61,21 +61,28 @@ def train(e):
 
             src_feat, tgt_feat, src_logit, tgt_logit = model(src_img, tgt_img)
 
-            # prediction loss
-            cls_loss = criteria(src_logit, src_y)
-
-            ddp = DDP_Loss(src_logit[:,1].squeeze(), src_z, sensitive_attrs, lambda_=lambda_)
-
-            # tgt_yhat = tgt_logit.argmax(dim=1)
-            tgt_yhat = tgt_y
-            target_src = combined_lable(src_y, src_z)
-            target_tgt = combined_lable(tgt_yhat, tgt_z)
-            cdd_intra, cdd_inter = CDD_Loss(src_feat.detach().cpu(), tgt_feat.detach().cpu(), target_src.cpu(), target_tgt.cpu())
 
             cost = 0
-            cost += cls_loss 
-            cost += ddp*1
-            cost += (cdd_intra - cdd_inter)*.1
+            ddp = None
+            cdd_intra = None
+            cdd_inter = None
+
+            # prediction loss
+            cls_loss = criteria(src_logit, src_y)
+            cost += cls_loss
+
+            if fa:
+                ddp = DDP_Loss(src_logit[:,1].squeeze(), src_z, sensitive_attrs, lambda_=lambda_)
+                cost += ddp*1
+
+            if da:
+                # tgt_yhat = tgt_logit.argmax(dim=1)
+                tgt_yhat = tgt_y
+                # previous combined_lable is a typo
+                target_src = combined_label(src_y, src_z)
+                target_tgt = combined_label(tgt_yhat, tgt_z)
+                cdd_intra, cdd_inter = CDD_Loss(src_feat.detach().cpu(), tgt_feat.detach().cpu(), target_src.cpu(), target_tgt.cpu())
+                cost += (cdd_intra - cdd_inter)*.1
 
             optimizer.zero_grad()
             if (torch.isnan(cost)).any():
@@ -84,12 +91,11 @@ def train(e):
             optimizer.step()
 
             cls_loss_avg += cls_loss.item()
-            intra_cdd_avg += cdd_intra.item()
-            inter_cdd_avg += cdd_inter.item()
-            ddp_avg += ddp.item()
-
-
-
+            if da:
+                intra_cdd_avg += cdd_intra.item()
+                inter_cdd_avg += cdd_inter.item()
+            if fa:
+                ddp_avg += ddp.item()
             metric = {'cls': cls_loss_avg/(i+1),
                         'cdd': '{:.3f}/{:.3f}'.format(intra_cdd_avg/(i+1), inter_cdd_avg/(i+1)),
                         'ddp': ddp_avg/(i+1)}
@@ -125,8 +131,7 @@ def test(e):
                     t.set_postfix(metric)
                     t.update()
 
-
 for e in range(200):
-    train(e)
+    train(e, da=False, fa=False)
     test(e)
     lr_scheduler.step()
